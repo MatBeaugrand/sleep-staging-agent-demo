@@ -132,7 +132,14 @@ class SubjectEpochs:
 
 
 def load_raw(psg_path: Path, hypno_path: Path) -> mne.io.BaseRaw:
-    """Read one recording, keep the two EEG derivations, band-pass filter it.
+    """Read one recording, keep the four channels of interest, filter selectively.
+
+    The band-pass is applied to the EEG and EOG channels only.  The submental
+    EMG is recorded at 1 Hz, so almost all of its content lies below the 0.3 Hz
+    high-pass edge: filtering it removes about 90 % of its variance and leaves
+    little but interpolation artefact.  It is therefore left unfiltered, and
+    :func:`src.features.extract_features` takes only time-domain amplitude
+    features from it.
 
     Filtering happens on the full continuous recording, before any cropping, so
     the filter's edge artefacts sit in the discarded wake tails rather than at
@@ -149,6 +156,7 @@ def load_raw(psg_path: Path, hypno_path: Path) -> mne.io.BaseRaw:
     raw.filter(
         l_freq=config.L_FREQ,
         h_freq=config.H_FREQ,
+        picks=config.SPECTRAL_CHANNELS,
         fir_design="firwin",
         verbose="error",
     )

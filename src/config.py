@@ -52,10 +52,27 @@ def ensure_dirs() -> None:
 # Recording / preprocessing
 # --------------------------------------------------------------------------- #
 
-CHANNELS = ["EEG Fpz-Cz", "EEG Pz-Oz"]
+#: Channels are grouped by modality because they get different feature sets and
+#: different filtering.  ``CHANNELS`` is the concatenation, and its order defines
+#: the channel axis of the epoch array everywhere downstream.
+EEG_CHANNELS = ["EEG Fpz-Cz", "EEG Pz-Oz"]
+EOG_CHANNELS = ["EOG horizontal"]
 
-#: Short, filesystem- and column-safe names for the channels above.
-CHANNEL_SLUGS = ["fpz_cz", "pz_oz"]
+#: Sleep-EDF's submental EMG is recorded at 1 Hz (MNE interpolates it up to the
+#: file's 100 Hz).  Its Nyquist limit is 0.5 Hz, so every band in ``BANDS`` would
+#: be pure interpolation artefact: it gets time-domain amplitude features only,
+#: and it bypasses the band-pass entirely (see ``EOG_CHANNELS`` note in data.py).
+EMG_CHANNELS = ["EMG submental"]
+
+CHANNELS = EEG_CHANNELS + EOG_CHANNELS + EMG_CHANNELS
+
+#: Short, filesystem- and column-safe names for the channels above, same order.
+CHANNEL_SLUGS = ["fpz_cz", "pz_oz", "eog", "emg"]
+
+#: Channels whose spectrum is meaningful, i.e. everything but the 1 Hz EMG.
+#: These are the leading channels of the epoch array, which lets the feature code
+#: slice rather than search.
+SPECTRAL_CHANNELS = EEG_CHANNELS + EOG_CHANNELS
 
 L_FREQ = 0.3   # Hz, band-pass low edge
 H_FREQ = 35.0  # Hz, band-pass high edge
@@ -113,6 +130,23 @@ TOTAL_BAND = (0.5, 30.0)
 #: segments are averaged within a 30 s epoch.
 WELCH_SEG_SEC = 4.0
 WELCH_OVERLAP = 0.5
+
+#: (numerator, denominator) band-power ratios, stored as natural logs.  Ratios
+#: of powers are scale-free, so these carry no amplitude information.
+BAND_RATIOS = [
+    ("delta", "beta"),
+    ("delta", "theta"),
+    ("theta", "alpha"),
+    ("alpha", "sigma"),
+]
+
+# --------------------------------------------------------------------------- #
+# Non-linear features
+# --------------------------------------------------------------------------- #
+
+PERM_ENTROPY_ORDER = 3   # embedding dimension; 3! = 6 ordinal patterns
+PERM_ENTROPY_DELAY = 1   # in samples
+HIGUCHI_KMAX = 10        # largest sub-series interval
 
 # --------------------------------------------------------------------------- #
 # Cross-validation

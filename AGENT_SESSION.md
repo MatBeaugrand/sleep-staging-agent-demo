@@ -1,9 +1,9 @@
 # Working session with Claude Code
 
-This repository was built on 17 August 2026 in one session with Claude Code
-(Claude Pro, personal account). The exported session transcript is in
-`transcript/`. This file records what I specified, what the agent produced, and
-what I changed afterwards.
+This repository was built on 17 August 2026 across two sessions with Claude Code
+(Claude Pro, personal account), the second resuming the first the same evening.
+The full exported transcript, both sessions, is in `transcript/`. This file
+records what I specified, what the agent produced, and what I changed.
 
 ## What I specified
 
@@ -182,7 +182,7 @@ generalising across cohorts.
 
 ## What I am not claiming
 
-**The commit history is dated 17-18 August.** The repository was not under
+**The commit history is dated 17 August.** The repository was not under
 version control during the first session, so the earliest commits cover the
 audit and the corrections rather than the generation. Nothing has been
 backdated. The exported transcript in `transcript/` is the record of the first

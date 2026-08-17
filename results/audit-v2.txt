@@ -1,0 +1,39 @@
+﻿Baseline: the unmutated suite must be green before anything else.
+
+  baseline green
+
+[leak] Split epochs at random instead of by subject. Consecutive epochs from one night are near-duplicates, so this leaks the answer.
+  caught by 12 test(s): test_rare_class_is_still_predicted_under_imbalance, test_no_subject_appears_in_both_train_and_test, test_every_epoch_is_tested_exactly_once (+9 more)
+
+[unscorable] Fold movement-time and unscorable epochs into wake instead of dropping them, inventing labels the scorer never assigned.
+  caught by 3 test(s): test_crop_is_wired_into_epoch_raw, test_unscorable_annotations_are_dropped[Sleep, test_unscorable_annotations_are_dropped[Movement
+
+[crop] Keep the whole ~20 h cassette recording. Wake rises from 17 % to 71 % of epochs and the task degenerates into wake detection.
+  caught by 1 test(s): test_crop_is_wired_into_epoch_raw
+
+[weights] Drop balanced class weighting. Accuracy barely moves while the rare N1 stage stops being predicted at all.
+  caught by 2 test(s): test_every_model_carries_balanced_class_weights[gbdt], test_every_model_carries_balanced_class_weights[logreg]
+
+[confusion] Normalise the confusion matrix by column instead of by row, so the diagonal reads as precision while being labelled recall.
+  caught by 1 test(s): test_normalised_confusion_is_row_normalised_not_column
+
+[trailing_future] Let the 2 min 'trailing' average reach into future epochs, so a feature named trailing silently carries information the epoch could not have had.
+  caught by 2 test(s): test_trailing_window_never_looks_into_the_future, test_trailing_average_uses_only_past_and_present
+
+[smooth_gap] Roll over array position instead of the epoch lattice, so a window spanning dropped epochs averages across the hole as though the recording were continuous.
+  caught by 1 test(s): test_smoothing_is_not_carried_across_a_gap
+
+[norm_pooled] Take one 5-95 spread over the whole matrix rather than per column, so every feature is rescaled by whichever column happens to have the largest range.
+  caught by 3 test(s): test_normalisation_makes_the_whole_matrix_scale_invariant, test_normalisation_centres_each_column_independently, test_normalisation_is_per_recording_not_pooled
+
+[smooth_pooled] Smooth the concatenated matrix as if it were one recording, so the rolling windows average the end of one subject's night into the start of the next subject's.
+  caught by 3 test(s): test_assemble_dataset_processes_each_recording_independently, test_assemble_dataset_does_not_smooth_across_a_subject_boundary, test_assemble_dataset_consumes_a_lazy_iterable
+
+[norm_pooled_recordings] Normalise once over all recordings pooled instead of once per recording, so every subject is z-scored against a distribution that includes the other subjects.
+  caught by 3 test(s): test_assemble_dataset_processes_each_recording_independently, test_assemble_dataset_does_not_smooth_across_a_subject_boundary, test_assemble_dataset_consumes_a_lazy_iterable
+
+[emg_spectral] Compute band powers and spectral entropy on the 1 Hz submental EMG, whose Nyquist limit is 0.5 Hz, so every band is pure interpolation artefact.
+  caught by 11 test(s): test_rare_class_is_still_predicted_under_imbalance, test_epoch_count_survives_feature_extraction, test_epoch_count_survives_the_full_per_recording_pipeline (+8 more)
+
+------------------------------------------------------------------------
+All 11 mutations were detected.

@@ -83,6 +83,69 @@ MUTATIONS = [
         rationale="Normalise the confusion matrix by column instead of by row, so "
                   "the diagonal reads as precision while being labelled recall.",
     ),
+    Mutation(
+        name="trailing_future",
+        file="src/features.py",
+        old="    return np.ones(n), np.arange(-(n - 1), 1)",
+        new="    return np.ones(n), np.arange(-(n - 1) + 2, 3)",
+        rationale="Let the 2 min 'trailing' average reach into future epochs, so a "
+                  "feature named trailing silently carries information the epoch "
+                  "could not have had.",
+    ),
+    Mutation(
+        name="smooth_gap",
+        file="src/features.py",
+        old="    slot = np.rint((onsets_sec - onsets_sec[0]) / config.EPOCH_SEC).astype(int)",
+        new="    slot = np.arange(X.shape[0])",
+        rationale="Roll over array position instead of the epoch lattice, so a "
+                  "window spanning dropped epochs averages across the hole as "
+                  "though the recording were continuous.",
+    ),
+    Mutation(
+        name="norm_pooled",
+        file="src/features.py",
+        old="    lo, hi = np.percentile(X, config.NORM_PERCENTILES, axis=0)",
+        new="    lo, hi = np.percentile(X, config.NORM_PERCENTILES)",
+        rationale="Take one 5-95 spread over the whole matrix rather than per "
+                  "column, so every feature is rescaled by whichever column "
+                  "happens to have the largest range.",
+    ),
+    Mutation(
+        name="smooth_pooled",
+        file="src/data.py",
+        old="    smoothed = [add_temporal_context(X, t) for X, t in zip(blocks_raw, blocks_t)]",
+        new="    smoothed = np.split(\n"
+            "        add_temporal_context(\n"
+            "            np.concatenate(blocks_raw),\n"
+            "            np.arange(sum(len(t) for t in blocks_t), dtype=float) * config.EPOCH_SEC,\n"
+            "        ),\n"
+            "        np.cumsum([len(t) for t in blocks_t])[:-1],\n"
+            "    )",
+        rationale="Smooth the concatenated matrix as if it were one recording, so "
+                  "the rolling windows average the end of one subject's night into "
+                  "the start of the next subject's.",
+    ),
+    Mutation(
+        name="norm_pooled_recordings",
+        file="src/data.py",
+        old="    prepared = [normalise_per_recording(X) for X in smoothed]",
+        new="    prepared = np.split(\n"
+            "        normalise_per_recording(np.concatenate(smoothed)),\n"
+            "        np.cumsum([len(t) for t in blocks_t])[:-1],\n"
+            "    )",
+        rationale="Normalise once over all recordings pooled instead of once per "
+                  "recording, so every subject is z-scored against a distribution "
+                  "that includes the other subjects.",
+    ),
+    Mutation(
+        name="emg_spectral",
+        file="src/config.py",
+        old="SPECTRAL_CHANNELS = EEG_CHANNELS + EOG_CHANNELS",
+        new="SPECTRAL_CHANNELS = EEG_CHANNELS + EOG_CHANNELS + EMG_CHANNELS",
+        rationale="Compute band powers and spectral entropy on the 1 Hz submental "
+                  "EMG, whose Nyquist limit is 0.5 Hz, so every band is pure "
+                  "interpolation artefact.",
+    ),
 ]
 
 

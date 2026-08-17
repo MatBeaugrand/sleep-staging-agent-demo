@@ -139,7 +139,37 @@ def test_report_covers_all_five_classes(synthetic_dataset):
     assert np.array(report.confusion).shape == (5, 5)
 
 
+def test_normalised_confusion_is_row_normalised_not_column():
+    """The diagonal must read as recall, which is what the axis label claims.
+
+    Asserted on a hand-built asymmetric matrix rather than on a model's output:
+    a well-separated fixture predicts perfectly, and a diagonal confusion matrix
+    normalises identically by row or by column, so it cannot tell the two apart.
+
+    W: 8 of 10 correct, 2 called N1.   N1: 1 of 2 correct, 1 called W.
+    Row-normalised (recall)    -> [W,W] = 8/10 = 0.80, [N1,N1] = 1/2 = 0.50
+    Column-normalised (precision) -> [W,W] = 8/9  = 0.89, [N1,N1] = 1/3 = 0.33
+    """
+    w, n1 = config.STAGE_TO_INT["W"], config.STAGE_TO_INT["N1"]
+    y_true = np.array([w] * 10 + [n1] * 2)
+    y_pred = np.array([w] * 8 + [n1] * 2 + [n1] + [w])
+
+    cm = normalised_confusion(y_true, y_pred)
+
+    assert cm.shape == (5, 5)
+    assert cm[w, w] == pytest.approx(0.80), "diagonal is not recall"
+    assert cm[n1, n1] == pytest.approx(0.50), "diagonal is not recall"
+    assert cm[w, n1] == pytest.approx(0.20)
+
+    rows = cm.sum(axis=1)
+    np.testing.assert_allclose(rows[~np.isnan(rows)], 1.0)
+    # Classes with no annotated epochs stay NaN rather than reading as zero.
+    for stage in ("REM", "N2", "N3"):
+        assert np.isnan(cm[config.STAGE_TO_INT[stage]]).all()
+
+
 def test_normalised_confusion_rows_sum_to_one(synthetic_dataset):
+    """Same invariant, but on the real out-of-fold path end to end."""
     y_pred, _ = out_of_fold_predictions(
         synthetic_dataset, lambda: build_model("logreg", config.SEED), n_splits=3
     )

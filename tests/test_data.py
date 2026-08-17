@@ -12,9 +12,10 @@ from src.data import (
     epoch_raw,
     map_stage,
     parse_subject_night,
+    prepare_recording,
     sleep_period_mask,
 )
-from src.features import extract_features, feature_names
+from src.features import base_feature_names, extract_features, feature_names
 
 
 # --------------------------------------------------------------------------- #
@@ -103,7 +104,19 @@ def test_epoch_count_survives_feature_extraction(annotated_raw):
     X = extract_features(epochs.data, sfreq=epochs.sfreq)
 
     assert X.shape[0] == epochs.data.shape[0] == len(epochs.labels)
-    assert X.shape[1] == len(feature_names())
+    # extract_features produces the per-epoch block; temporal context is added
+    # afterwards by prepare_recording, which is what feature_names() describes.
+    assert X.shape[1] == len(base_feature_names())
+
+
+def test_epoch_count_survives_the_full_per_recording_pipeline(annotated_raw):
+    """Context and normalisation must add columns, never rows."""
+    raw, _ = annotated_raw
+    epochs = epoch_raw(raw, subject=0, crop=False)
+
+    X = prepare_recording(extract_features(epochs.data, sfreq=epochs.sfreq), epochs.onsets_sec)
+
+    assert X.shape == (len(epochs.labels), len(feature_names()))
 
 
 def test_subject_epochs_rejects_mismatched_lengths():

@@ -92,22 +92,23 @@ def test_rare_class_is_still_predicted_under_imbalance(rng):
     altogether while overall accuracy barely moves, which is precisely why
     macro F1 and not accuracy is the headline metric.
     """
-    from src.data import Dataset
+    from src.data import Dataset, prepare_recording
     from src.features import extract_features, feature_names
-    from tests.conftest import SFREQ, make_epochs
+    from tests.conftest import SFREQ, make_bouts, make_epochs
 
     proportions = {"W": 0.22, "REM": 0.18, "N1": 0.03, "N2": 0.42, "N3": 0.15}
 
     X, y, g, t = [], [], [], []
     for subject in range(6):
-        labels = []
-        for stage, share in proportions.items():
-            labels.extend([stage] * max(1, round(share * 200)))
-        rng.shuffle(labels)
-        X.append(extract_features(make_epochs(labels, rng), sfreq=SFREQ))
+        # Contiguous bouts rather than shuffled epochs, and routed through
+        # prepare_recording, so the fixture carries the same temporal-context
+        # and per-recording-normalisation columns as the real feature matrix.
+        labels = make_bouts(proportions, 200, rng, bout_epochs=5)
+        onsets = np.arange(len(labels), dtype=float) * config.EPOCH_SEC
+        X.append(prepare_recording(extract_features(make_epochs(labels, rng), SFREQ), onsets))
         y.append(np.array([config.STAGE_TO_INT[s] for s in labels]))
         g.append(np.full(len(labels), subject, dtype=int))
-        t.append(np.arange(len(labels), dtype=float) * config.EPOCH_SEC)
+        t.append(onsets)
 
     dataset = Dataset(
         X=np.concatenate(X),

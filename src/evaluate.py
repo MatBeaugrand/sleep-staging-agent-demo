@@ -118,7 +118,16 @@ class Report:
     support: dict[str, int]
     fold_macro_f1: list[float] = field(default_factory=list)
     fold_kappa: list[float] = field(default_factory=list)
+    #: Out-of-fold kappa computed within each held-out subject, keyed by subject
+    #: id as a string so the report is JSON-serialisable.  The median of these is
+    #: the quantity Vallat & Walker (2021) report, so it is what to compare
+    #: against their 0.80 -- not the pooled kappa above.
+    subject_kappa: dict[str, float] = field(default_factory=dict)
     confusion: list[list[int]] = field(default_factory=list)
+
+    @property
+    def median_subject_kappa(self) -> float:
+        return float(np.median(list(self.subject_kappa.values())))
 
     def to_dict(self) -> dict:
         d = self.__dict__.copy()
@@ -126,9 +135,11 @@ class Report:
         d["fold_macro_f1_std"] = float(np.std(self.fold_macro_f1))
         d["fold_kappa_mean"] = float(np.mean(self.fold_kappa))
         d["fold_kappa_std"] = float(np.std(self.fold_kappa))
+        d["median_subject_kappa"] = self.median_subject_kappa
         return d
 
     def summary(self) -> str:
+        subject_kappas = np.array(list(self.subject_kappa.values()))
         lines = [
             f"{MODEL_LABELS.get(self.model, self.model)}"
             f"  ({self.n_epochs} epochs, {self.n_subjects} subjects,"
@@ -140,6 +151,8 @@ class Report:
             f"  Cohen's kappa   {self.kappa:.3f}"
             f"   (per fold {np.mean(self.fold_kappa):.3f}"
             f" +/- {np.std(self.fold_kappa):.3f})",
+            f"  median per-subject kappa   {self.median_subject_kappa:.3f}"
+            f"   (range {subject_kappas.min():.3f}-{subject_kappas.max():.3f})",
             "  per-class F1:",
         ]
         for stage in config.STAGE_NAMES:
@@ -169,6 +182,13 @@ def compute_report(
         )
         fold_kappa.append(float(cohen_kappa_score(y_true[m], y_pred[m], labels=_LABELS)))
 
+    subject_kappa = {
+        str(int(subject)): float(
+            cohen_kappa_score(y_true[groups == subject], y_pred[groups == subject], labels=_LABELS)
+        )
+        for subject in np.unique(groups)
+    }
+
     return Report(
         model=model,
         n_epochs=int(len(y_true)),
@@ -183,6 +203,7 @@ def compute_report(
         support={s: int(c) for s, c in zip(config.STAGE_NAMES, counts)},
         fold_macro_f1=fold_f1,
         fold_kappa=fold_kappa,
+        subject_kappa=subject_kappa,
         confusion=confusion_matrix(y_true, y_pred, labels=_LABELS).tolist(),
     )
 
@@ -298,6 +319,47 @@ def plot_hypnogram(
     return path
 
 
+def plot_subject_kappa(report: Report, path: Path, reference: float | None = 0.80) -> Path:
+    """Out-of-fold kappa for each held-out subject, with the median marked.
+
+    This is the figure to read when comparing against a published median
+    per-subject kappa; the pooled kappa is a different quantity.
+    """
+    subjects = sorted(report.subject_kappa, key=lambda s: report.subject_kappa[s])
+    values = [report.subject_kappa[s] for s in subjects]
+    median = report.median_subject_kappa
+
+    fig, ax = plt.subplots(figsize=(9.4, max(3.2, 0.28 * len(subjects) + 1.6)),
+                           constrained_layout=True)
+    positions = np.arange(len(subjects))
+    ax.hlines(positions, 0, values, color="#c6d9ec", linewidth=3)
+    ax.plot(values, positions, "o", color="#1f77b4", markersize=6, label="subject")
+
+    ax.axvline(median, color="#d62728", linewidth=1.6,
+               label=f"median {median:.3f}")
+    if reference is not None:
+        ax.axvline(reference, color="#666666", linestyle="--", linewidth=1.2,
+                   label=f"Vallat & Walker 2021 median {reference:.2f}")
+
+    ax.set_yticks(positions, [f"{int(s):02d}" for s in subjects])
+    ax.set_ylabel("Subject")
+    ax.set_xlabel("Cohen's kappa (out-of-fold, within subject)")
+    ax.set_xlim(0, 1)
+    ax.set_title(
+        f"{MODEL_LABELS.get(report.model, report.model)} -- per-subject agreement",
+        fontsize=11,
+    )
+    ax.grid(axis="x", alpha=0.3)
+    # Outside the axes: the lollipop stems run from 0, so any in-axes corner
+    # would sit on top of a subject's marker.
+    ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), fontsize=8, frameon=False)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return path
+
+
 # --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
@@ -332,7 +394,10 @@ def evaluate_model(
         model_name,
         figures / f"hypnogram_{model_name}_subject{subject:02d}.png",
     )
-    logger.info("wrote %s and %s", cm_path.name, hyp_path.name)
+    kappa_path = plot_subject_kappa(
+        report, figures / f"subject_kappa_{model_name}.png"
+    )
+    logger.info("wrote %s, %s and %s", cm_path.name, hyp_path.name, kappa_path.name)
     return report
 
 

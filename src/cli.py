@@ -45,10 +45,10 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["run", "fetch", "features"],
         help="run: full pipeline (default); fetch: download only; features: cache features",
     )
-    parser.add_argument("--subjects", type=int, default=8, help="number of subjects (default 8)")
+    parser.add_argument("--subjects", type=int, default=20, help="number of subjects (default 20)")
     parser.add_argument("--night", type=int, default=1, choices=[1, 2], help="recording night")
     parser.add_argument(
-        "--folds", type=int, default=config.N_SPLITS, help="GroupKFold splits (default 4)"
+        "--folds", type=int, default=config.N_SPLITS, help="GroupKFold splits (default 5)"
     )
     parser.add_argument("--seed", type=int, default=config.SEED)
     parser.add_argument(

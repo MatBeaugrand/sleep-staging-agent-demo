@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from . import config
-from .data import fetch_recordings, load_or_build
+from .data import cache_path, fetch_recordings, load_or_build
 from .evaluate import evaluate_model, write_reports
 from .model import MODELS
 
@@ -102,11 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     crop = not args.no_crop
-    suffix = "" if crop else "-full"
-    cache = (
-        config.derivatives_dir()
-        / f"features-{args.subjects}subj-night{args.night}{suffix}.npz"
-    )
+    cache = cache_path(n_subjects=args.subjects, night=args.night, crop=crop)
     if args.force and cache.exists():
         cache.unlink()
 

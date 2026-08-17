@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import mne
@@ -228,6 +229,10 @@ def epoch_raw(raw: mne.io.BaseRaw, subject: int, crop: bool = True) -> SubjectEp
 # --------------------------------------------------------------------------- #
 
 
+class StaleCacheError(RuntimeError):
+    """A cached feature matrix was built under a different feature spec."""
+
+
 @dataclass(frozen=True)
 class Dataset:
     """Feature matrix plus everything needed for grouped validation and plots."""
@@ -237,6 +242,7 @@ class Dataset:
     groups: np.ndarray       # (n_epochs,) subject id -- the CV grouping key
     onsets_sec: np.ndarray   # (n_epochs,) epoch start within its own recording
     feature_names: list[str]
+    fingerprint: str = field(default_factory=config.feature_fingerprint)
 
     def __post_init__(self) -> None:
         n = self.X.shape[0]
@@ -258,17 +264,32 @@ class Dataset:
             groups=self.groups,
             onsets_sec=self.onsets_sec,
             feature_names=np.array(self.feature_names, dtype=object),
+            fingerprint=np.array(self.fingerprint),
         )
 
     @classmethod
     def load(cls, path: Path) -> "Dataset":
+        """Read a cached matrix, refusing one built under a different spec.
+
+        The fingerprint is checked here as well as being part of the filename,
+        so a renamed or hand-copied cache cannot quietly supply features that no
+        longer match the current configuration.
+        """
         with np.load(path, allow_pickle=True) as f:
+            stored = str(f["fingerprint"]) if "fingerprint" in f else "<absent>"
+            current = config.feature_fingerprint()
+            if stored != current:
+                raise StaleCacheError(
+                    f"{path.name} was built under feature spec {stored}, but the "
+                    f"current spec is {current}. Delete it or rerun with --force."
+                )
             return cls(
                 X=f["X"],
                 y=f["y"],
                 groups=f["groups"],
                 onsets_sec=f["onsets_sec"],
                 feature_names=[str(n) for n in f["feature_names"]],
+                fingerprint=stored,
             )
 
 
@@ -343,19 +364,35 @@ def build_dataset(n_subjects: int = 8, night: int = 1, crop: bool = True) -> Dat
     return assemble_dataset(load_each())
 
 
+def cache_path(n_subjects: int = 8, night: int = 1, crop: bool = True) -> Path:
+    """Cache filename, carrying the feature-spec fingerprint.
+
+    Two specs therefore get two files rather than one file whose contents depend
+    on when it was written.
+    """
+    suffix = "" if crop else "-full"
+    return (
+        config.derivatives_dir()
+        / f"features-{n_subjects}subj-night{night}{suffix}-{config.feature_fingerprint()}.npz"
+    )
+
+
 def load_or_build(
     cache: Path | None = None, n_subjects: int = 8, night: int = 1, crop: bool = True
 ) -> Dataset:
     """Return the cached feature matrix, computing and caching it if absent."""
     if cache is None:
-        suffix = "" if crop else "-full"
-        cache = config.derivatives_dir() / f"features-{n_subjects}subj-night{night}{suffix}.npz"
+        cache = cache_path(n_subjects=n_subjects, night=night, crop=crop)
 
     if cache.exists():
-        logger.info("loading cached features from %s", cache)
-        return Dataset.load(cache)
+        try:
+            dataset = Dataset.load(cache)
+            logger.info("loaded cached features from %s", cache.name)
+            return dataset
+        except StaleCacheError as exc:
+            logger.warning("ignoring stale cache: %s", exc)
 
     dataset = build_dataset(n_subjects=n_subjects, night=night, crop=crop)
     dataset.save(cache)
-    logger.info("cached features to %s", cache)
+    logger.info("cached features to %s", cache.name)
     return dataset

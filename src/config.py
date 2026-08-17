@@ -7,6 +7,8 @@ redirected with the SLEEP_DATA_DIR environment variable.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from pathlib import Path
 
@@ -174,3 +176,46 @@ NORM_SPREAD_FLOOR = 1e-12
 # --------------------------------------------------------------------------- #
 
 N_SPLITS = 4
+
+
+# --------------------------------------------------------------------------- #
+# Feature-cache coherence
+# --------------------------------------------------------------------------- #
+
+
+def feature_spec() -> dict:
+    """Everything that changes the meaning of a cached feature matrix.
+
+    Read at call time, so monkeypatching a constant in a test is reflected here.
+    """
+    return {
+        "channels": list(CHANNELS),
+        "channel_slugs": list(CHANNEL_SLUGS),
+        "bands": [list(b) for b in BANDS],
+        "band_ratios": [list(r) for r in BAND_RATIOS],
+        "total_band": list(TOTAL_BAND),
+        "welch_seg_sec": WELCH_SEG_SEC,
+        "welch_overlap": WELCH_OVERLAP,
+        "perm_entropy": [PERM_ENTROPY_ORDER, PERM_ENTROPY_DELAY],
+        "higuchi_kmax": HIGUCHI_KMAX,
+        "smooth_centred_min": SMOOTH_CENTRED_MIN,
+        "smooth_trailing_min": SMOOTH_TRAILING_MIN,
+        "norm_percentiles": list(NORM_PERCENTILES),
+        "norm_spread_floor": NORM_SPREAD_FLOOR,
+        "epoch_sec": EPOCH_SEC,
+        "l_freq": L_FREQ,
+        "h_freq": H_FREQ,
+        "crop_margin_min": CROP_MARGIN_MIN,
+        "stage_map": dict(STAGE_MAP),
+        "stage_names": list(STAGE_NAMES),
+    }
+
+
+def feature_fingerprint() -> str:
+    """Short digest of :func:`feature_spec`.
+
+    Goes into the cache filename *and* inside the ``.npz``, so a feature matrix
+    computed under a different specification can never be silently reused.
+    """
+    payload = json.dumps(feature_spec(), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:10]

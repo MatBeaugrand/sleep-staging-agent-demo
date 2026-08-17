@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sleep-staging-edf"
+version = "0.1.0"
+description = "Reproducible 5-class sleep staging pipeline on Sleep-EDF Expanded"
+requires-python = ">=3.10"
+dynamic = ["dependencies"]
+
+[project.scripts]
+sleep-staging = "src.cli:main"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning"]

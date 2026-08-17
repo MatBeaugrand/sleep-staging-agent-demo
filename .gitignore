@@ -1,0 +1,21 @@
+# Raw recordings and cached feature matrices are never committed.
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# figures/ and results/ are regenerable but small, and are kept under version
+# control so a reader can see the output without downloading 350 MB of EDF.
+.vs/

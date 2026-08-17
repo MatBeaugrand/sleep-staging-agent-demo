@@ -284,30 +284,63 @@ def prepare_recording(X_raw: np.ndarray, onsets_sec: np.ndarray) -> np.ndarray:
     return normalise_per_recording(add_temporal_context(X_raw, onsets_sec))
 
 
-def build_dataset(n_subjects: int = 8, night: int = 1, crop: bool = True) -> Dataset:
-    """Full path from PhysioNet download to feature matrix."""
-    recordings = fetch_recordings(n_subjects=n_subjects, night=night)
+def assemble_dataset(recordings: Iterable[SubjectEpochs]) -> Dataset:
+    """Turn per-recording epochs into one feature matrix.
 
-    blocks_X, blocks_y, blocks_g, blocks_t = [], [], [], []
-    for subject, psg, hypno in recordings:
-        logger.info("subject %02d: loading %s", subject, psg.name)
-        raw = load_raw(psg, hypno)
-        epochs = epoch_raw(raw, subject=subject, crop=crop)
-        X = extract_features(epochs.data, sfreq=epochs.sfreq)
+    This function exists separately from :func:`build_dataset` so that the step
+    carrying the leakage risk is reachable from the test suite without
+    downloading anything.  ``build_dataset`` can only run against real EDF files,
+    so anything expressed only there is, in practice, unguarded.
 
-        logger.info("subject %02d: %d epochs, %d features", subject, X.shape[0], X.shape[1])
-        blocks_X.append(X)
+    ``recordings`` is consumed lazily: only one recording's signal is held in
+    memory at a time, and only its 39 per-epoch features are retained.
+
+    The two per-recording steps below are spelled out rather than folded into
+    :func:`prepare_recording` so that each is independently guarded by its own
+    mutation (``smooth_pooled``, ``norm_pooled_recordings``).  Hoisting either
+    one onto the concatenated matrix would smooth one subject's epochs into the
+    next and normalise every subject against a pooled distribution.
+    """
+    blocks_raw, blocks_y, blocks_g, blocks_t = [], [], [], []
+    for epochs in recordings:
+        X_raw = extract_features(epochs.data, sfreq=epochs.sfreq)
+        logger.info(
+            "subject %02d: %d epochs, %d per-epoch features",
+            epochs.subject,
+            X_raw.shape[0],
+            X_raw.shape[1],
+        )
+        blocks_raw.append(X_raw)
         blocks_y.append(epochs.labels)
-        blocks_g.append(np.full(X.shape[0], subject, dtype=int))
+        blocks_g.append(np.full(X_raw.shape[0], epochs.subject, dtype=int))
         blocks_t.append(epochs.onsets_sec)
 
+    if not blocks_raw:
+        raise ValueError("no recordings supplied")
+
+    smoothed = [add_temporal_context(X, t) for X, t in zip(blocks_raw, blocks_t)]
+    prepared = [normalise_per_recording(X) for X in smoothed]
+
     return Dataset(
-        X=np.concatenate(blocks_X),
+        X=np.concatenate(prepared),
         y=np.concatenate(blocks_y),
         groups=np.concatenate(blocks_g),
         onsets_sec=np.concatenate(blocks_t),
         feature_names=feature_names(),
     )
+
+
+def build_dataset(n_subjects: int = 8, night: int = 1, crop: bool = True) -> Dataset:
+    """Full path from PhysioNet download to feature matrix."""
+    recordings = fetch_recordings(n_subjects=n_subjects, night=night)
+
+    def load_each() -> Iterator[SubjectEpochs]:
+        for subject, psg, hypno in recordings:
+            logger.info("subject %02d: loading %s", subject, psg.name)
+            raw = load_raw(psg, hypno)
+            yield epoch_raw(raw, subject=subject, crop=crop)
+
+    return assemble_dataset(load_each())
 
 
 def load_or_build(

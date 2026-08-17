@@ -38,10 +38,8 @@ recommendation on each:
    30 minutes on either side. I accepted. This was the agent's observation, not
    mine.
 2. One night per subject rather than both.
-3. `GroupKFold` with 4 folds given 20 subjects.
+3. `GroupKFold` with 4 folds given 8 subjects.
 4. Running the pipeline end to end within the session.
-* Channels `EEG Fpz-Cz`, `EEG Pz-Oz`, `EOG horizontal` and `EMG submental` are
-  kept; the respiration and temperature channels are dropped.
 
 ## Where I disagreed with it
 
@@ -71,7 +69,6 @@ survived with every test still passing:
 of the harness on either side of that change.
 
 
-```
 ## Second session: temporal context, EOG and EMG
 
 The first version sat at Cohen's kappa 0.693, which is roughly where the
@@ -182,8 +179,6 @@ external cohorts with different montages and different scorers; ours is
 within-cohort, held-out subjects only, same montage and same scoring standard.
 Generalising across subjects of one cohort is a substantially easier test than
 generalising across cohorts.
-
-## What I am not claiming
 
 ## What I am not claiming
 

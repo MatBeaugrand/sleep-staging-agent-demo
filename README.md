@@ -39,10 +39,11 @@ The test suite is fully synthetic — it never downloads anything.
 
 ### 1. Data (`src/data.py`)
 
-* Eight subjects, night 1, sleep-cassette (`SC4ss1E0`). The subject id is
+* Twenty subjects, night 1, sleep-cassette (`SC4ss1E0`). The subject id is
   parsed out of the filename and becomes the cross-validation group.
-* Channels `EEG Fpz-Cz` and `EEG Pz-Oz` are kept; EOG, EMG and the respiration
-  channels are dropped.
+* Channels `EEG Fpz-Cz`, `EEG Pz-Oz`, `EOG horizontal` and `EMG submental` are
+  kept; the respiration and temperature channels are dropped. Only the EEG and
+  EOG are band-passed, for the reason given under Features.
 * Band-pass **0.3–35 Hz** (FIR, `firwin`), applied to the *continuous* signal
   before any cropping, so filter edge artefacts land in the discarded wake
   tails rather than at the edge of the sleep period.

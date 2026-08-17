@@ -149,6 +149,27 @@ PERM_ENTROPY_DELAY = 1   # in samples
 HIGUCHI_KMAX = 10        # largest sub-series interval
 
 # --------------------------------------------------------------------------- #
+# Temporal context
+# --------------------------------------------------------------------------- #
+
+#: Every per-epoch feature is additionally smoothed two ways, following Vallat &
+#: Walker (2021).  7.5 min / 30 s = 15 epochs exactly; 2 min / 30 s = 4 epochs.
+SMOOTH_CENTRED_MIN = 7.5   # centred, triangular-weighted
+SMOOTH_TRAILING_MIN = 2.0  # trailing, uniform, past epochs and the current one
+
+# --------------------------------------------------------------------------- #
+# Per-recording normalisation
+# --------------------------------------------------------------------------- #
+
+#: Robust z-score: (x - median) / (p_hi - p_lo), computed per recording so that
+#: a night is normalised only against itself and never against other subjects.
+NORM_PERCENTILES = (5.0, 95.0)
+
+#: If a column's 5-95 spread is below this, centre it but do not divide.
+#: Dividing a near-constant column by a near-zero spread amplifies pure noise.
+NORM_SPREAD_FLOOR = 1e-12
+
+# --------------------------------------------------------------------------- #
 # Cross-validation
 # --------------------------------------------------------------------------- #
 

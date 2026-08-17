@@ -110,6 +110,25 @@ def base_feature_names() -> list[str]:
     return names
 
 
+def feature_names() -> list[str]:
+    """Column names of the final matrix: 39 raw, then centred, then trailing."""
+    base = base_feature_names()
+    return (
+        base
+        + [n + CENTRED_SUFFIX for n in base]
+        + [n + TRAILING_SUFFIX for n in base]
+    )
+
+
+#: Columns whose value shifts by ``2 * ln k`` when the signal is scaled by ``k``.
+LOG_POWER_FEATURES = [n for n in base_feature_names() if n.endswith("_log_abspow")]
+
+#: Columns whose value shifts by ``1 * ln k`` -- amplitudes, not powers.
+LOG_AMPLITUDE_FEATURES = [
+    n for n in base_feature_names() if n.endswith(("_log_std", "_log_iqr"))
+]
+
+
 def compute_psd(data: np.ndarray, sfreq: float) -> tuple[np.ndarray, np.ndarray]:
     """Welch PSD along the last axis.
 
@@ -185,26 +204,6 @@ def spectral_entropy(
     terms = np.where(p > 0, p * np.log(np.where(p > 0, p, 1.0)), 0.0)
     return -terms.sum(axis=-1) / np.log(n_bins)
 
-
-def extract_features(data: np.ndarray, sfreq: float) -> np.ndarray:
-    """39 features per epoch, laid out channel-major.
-
-    Parameters
-    ----------
-    data
-        ``(n_epochs, n_channels, n_times)`` epoched signal, with channels in
-        :data:`config.CHANNELS` order.  The EMG channel is expected to have
-        bypassed the band-pass (see :func:`src.data.load_raw`).
-    sfreq
-        Sampling frequency in Hz.
-
-    Returns
-    -------
-    ``(n_epochs, 39)`` in the order given by :func:`base_feature_names`.
-    """
-    data = np.asarray(data, dtype=float)
-    if data.ndim != 3:
-        raise ValueError(f"expected (n_epochs, n_channels, n_times), got shape {data.shape}")
 
 def total_power(freqs: np.ndarray, psd: np.ndarray) -> np.ndarray:
     """Absolute power over :data:`config.TOTAL_BAND`, in signal units squared.
@@ -334,13 +333,25 @@ def petrosian_fd(x: np.ndarray) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 
 
-    freqs, psd = compute_psd(data, sfreq)          # (n_epochs, n_channels, n_freqs)
-    powers = relative_band_powers(freqs, psd)      # (n_epochs, n_channels, n_bands)
-    entropy = spectral_entropy(freqs, psd)         # (n_epochs, n_channels)
+def extract_features(data: np.ndarray, sfreq: float) -> np.ndarray:
+    """39 features per epoch, laid out channel-major.
 
-    per_channel = np.concatenate([powers, entropy[..., np.newaxis]], axis=-1)
-    n_epochs, n_channels, n_feat = per_channel.shape
-    return per_channel.reshape(n_epochs, n_channels * n_feat)
+    Parameters
+    ----------
+    data
+        ``(n_epochs, n_channels, n_times)`` epoched signal, with channels in
+        :data:`config.CHANNELS` order.  The EMG channel is expected to have
+        bypassed the band-pass (see :func:`src.data.load_raw`).
+    sfreq
+        Sampling frequency in Hz.
+
+    Returns
+    -------
+    ``(n_epochs, 39)`` in the order given by :func:`base_feature_names`.
+    """
+    data = np.asarray(data, dtype=float)
+    if data.ndim != 3:
+        raise ValueError(f"expected (n_epochs, n_channels, n_times), got shape {data.shape}")
     if data.shape[1] != len(config.CHANNELS):
         raise ValueError(
             f"expected {len(config.CHANNELS)} channels {config.CHANNELS}, "
@@ -402,3 +413,123 @@ def petrosian_fd(x: np.ndarray) -> np.ndarray:
 
     return np.concatenate(blocks, axis=1)
 
+
+# --------------------------------------------------------------------------- #
+# Temporal context
+# --------------------------------------------------------------------------- #
+
+
+def _shift(a: np.ndarray, offset: int) -> np.ndarray:
+    """``result[i] = a[i + offset]``, zero-filled past the ends.
+
+    A negative offset therefore looks *backwards* in time.
+    """
+    out = np.zeros_like(a)
+    if offset == 0:
+        out[:] = a
+    elif offset > 0:
+        out[:-offset] = a[offset:]
+    else:
+        out[-offset:] = a[:offset]
+    return out
+
+
+def _rolling(
+    X: np.ndarray, onsets_sec: np.ndarray, weights: np.ndarray, offsets: np.ndarray
+) -> np.ndarray:
+    """Weighted rolling average over the recording's 30 s epoch lattice.
+
+    Epochs are placed on the lattice implied by their onsets rather than on their
+    position in ``X``, because dropped epochs ("Sleep stage ?", "Movement time")
+    leave holes mid-recording.  Weights are renormalised over whichever
+    neighbours actually exist, so a truncated window at the start or end of the
+    recording and a window straddling a hole are handled by the same arithmetic
+    and neither one invents data.
+    """
+    if X.shape[0] != onsets_sec.shape[0]:
+        raise ValueError("X and onsets_sec disagree on the number of epochs")
+    if np.any(np.diff(onsets_sec) <= 0):
+        raise ValueError("onsets_sec must be strictly increasing")
+
+    slot = np.rint((onsets_sec - onsets_sec[0]) / config.EPOCH_SEC).astype(int)
+    n_slots = int(slot[-1]) + 1
+
+    values = np.zeros((n_slots, X.shape[1]), dtype=float)
+    present = np.zeros((n_slots, 1), dtype=float)
+    values[slot] = X
+    present[slot] = 1.0
+
+    numerator = np.zeros_like(values)
+    denominator = np.zeros_like(present)
+    for weight, offset in zip(weights, offsets):
+        numerator += weight * _shift(values, int(offset))
+        denominator += weight * _shift(present, int(offset))
+
+    smoothed = numerator / np.where(denominator > 0, denominator, 1.0)
+    return smoothed[slot]
+
+
+def centred_window() -> tuple[np.ndarray, np.ndarray]:
+    """Triangular weights and offsets for the centred smoother.
+
+    7.5 min at 30 s per epoch is 15 epochs, so the window is symmetric about the
+    current epoch with no rounding.  ``scipy.signal.windows.triang`` is the same
+    weighting pandas applies for ``win_type="triang"``.
+    """
+    n = int(round(config.SMOOTH_CENTRED_MIN * 60.0 / config.EPOCH_SEC))
+    if n % 2 == 0:
+        raise ValueError(
+            f"centred window must span an odd number of epochs, got {n}; "
+            f"adjust SMOOTH_CENTRED_MIN ({config.SMOOTH_CENTRED_MIN} min)"
+        )
+    half = n // 2
+    return triang(n), np.arange(-half, half + 1)
+
+
+def trailing_window() -> tuple[np.ndarray, np.ndarray]:
+    """Uniform weights and offsets for the trailing smoother.
+
+    Offsets run from ``-(n - 1)`` to ``0``: past epochs and the current one, and
+    deliberately nothing in the future.
+    """
+    n = int(round(config.SMOOTH_TRAILING_MIN * 60.0 / config.EPOCH_SEC))
+    return np.ones(n), np.arange(-(n - 1), 1)
+
+
+def add_temporal_context(X: np.ndarray, onsets_sec: np.ndarray) -> np.ndarray:
+    """Append centred and trailing smoothed copies of every column.
+
+    Must be called on a **single recording**: the smoothers walk the epoch
+    lattice, so applying this to several concatenated nights would average one
+    subject's epochs into another's.
+    """
+    X = np.asarray(X, dtype=float)
+    onsets_sec = np.asarray(onsets_sec, dtype=float)
+
+    centred = _rolling(X, onsets_sec, *centred_window())
+    trailing = _rolling(X, onsets_sec, *trailing_window())
+    return np.concatenate([X, centred, trailing], axis=1)
+
+
+# --------------------------------------------------------------------------- #
+# Per-recording normalisation
+# --------------------------------------------------------------------------- #
+
+
+def normalise_per_recording(X: np.ndarray) -> np.ndarray:
+    """Robust z-score every column against this recording's own distribution.
+
+    ``(x - median) / (p95 - p05)``, which is far less sensitive to the extreme
+    values that arrive with a clipped or disconnected epoch than a mean and
+    standard deviation would be.
+
+    Called once per recording, so a night is only ever normalised against
+    itself.  No training-fold statistic is involved and nothing crosses the
+    train/test boundary.  It does assume the whole night is available, which
+    holds for offline staging and would not for a real-time scorer.
+    """
+    X = np.asarray(X, dtype=float)
+    lo, hi = np.percentile(X, config.NORM_PERCENTILES, axis=0)
+    spread = hi - lo
+    centred = X - np.median(X, axis=0)
+    return centred / np.where(spread < config.NORM_SPREAD_FLOOR, 1.0, spread)

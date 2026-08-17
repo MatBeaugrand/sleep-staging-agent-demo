@@ -17,7 +17,12 @@ import mne
 import numpy as np
 
 from . import config
-from .features import extract_features, feature_names
+from .features import (
+    add_temporal_context,
+    extract_features,
+    feature_names,
+    normalise_per_recording,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +270,18 @@ class Dataset:
                 onsets_sec=f["onsets_sec"],
                 feature_names=[str(n) for n in f["feature_names"]],
             )
+
+
+def prepare_recording(X_raw: np.ndarray, onsets_sec: np.ndarray) -> np.ndarray:
+    """Add temporal context and normalise, for **one** recording.
+
+    Kept as its own function because both steps are only correct within a single
+    night: the smoothers walk that recording's epoch lattice, and the robust
+    z-score uses that recording's own percentiles.  Calling this on several
+    concatenated nights would average one subject's epochs into another's and
+    normalise every subject against a pooled distribution.
+    """
+    return normalise_per_recording(add_temporal_context(X_raw, onsets_sec))
 
 
 def build_dataset(n_subjects: int = 8, night: int = 1, crop: bool = True) -> Dataset:

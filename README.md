@@ -201,23 +201,6 @@ one place.
   adjacent epochs of the same subject on both sides of that split and make the
   run non-deterministic.
 
-### 3. Models (`src/model.py`)
-
-| Name | Estimator |
-|---|---|
-| `logreg` | `StandardScaler` → multinomial `LogisticRegression(C=1, class_weight="balanced")` |
-| `gbdt` | `HistGradientBoostingClassifier(class_weight="balanced", max_iter=200, early_stopping=False)` |
-
-* Both carry **balanced class weights**. N1 is a few percent of epochs and is
-  simply not predicted by an unweighted fit.
-* Both are `Pipeline` objects, so the scaler is **fitted on the training fold
-  only**. Standardising the full matrix before cross-validation would leak
-  held-out subjects into training.
-* `early_stopping=False` on the booster is deliberate: the built-in early stop
-  carves a *random* validation slice out of the training fold, which would put
-  adjacent epochs of the same subject on both sides of that split and make the
-  run non-deterministic.
-
 ### 4. Validation (`src/evaluate.py`)
 
 * `GroupKFold(n_splits=5)` with **subject as the group** — four held-out

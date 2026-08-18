@@ -185,8 +185,7 @@ generalising across cohorts.
 **The commit history is dated 17 August.** The repository was not under
 version control during the first session, so the earliest commits cover the
 audit and the corrections rather than the generation. Nothing has been
-backdated. The exported transcript in `transcript/` is the record of the first
-session.
+backdated. The exported transcript in `transcript/` covers both sessions.
 
 **I did not contradict the agent during the first session.** Having fixed the
 methodology in the opening prompt, I had nothing to catch; the transcript shows
